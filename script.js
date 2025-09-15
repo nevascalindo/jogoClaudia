@@ -113,14 +113,19 @@
     const initialVy = -rng(700, 920);
     const vx = side < 0 ? rng(140, 260) : -rng(140, 260);
 
+    // Determine if this entity is a bomb (about 18% chance)
+    const isBomb = Math.random() < 0.18;
+
     GAME.fruits.push({
       x, y: baseY,
       vx, vy: initialVy,
       r: radius,
       color,
+      isBomb,
       sliced: false,
+      sliceTimer: 0,
       createdAt: now,
-      reward: Math.round(radius / 4) * 5, // points per size
+      reward: 5, // pontos fixos por bolinha
       missed: false,
     });
   }
@@ -140,10 +145,17 @@
   function update(dt) {
     const g = GAME.gravity;
     for (const f of GAME.fruits) {
-      if (f.sliced) continue;
-      f.vy += g * dt;
-      f.x += f.vx * dt;
-      f.y += f.vy * dt;
+      if (f.sliced) {
+        f.sliceTimer += dt;
+        // sliced effect: gentle float up and fade handled in draw; still apply slight gravity for continuity
+        f.vy += g * dt * 0.2;
+        f.y += f.vy * dt;
+        f.x += f.vx * dt * 0.5;
+      } else {
+        f.vy += g * dt;
+        f.x += f.vx * dt;
+        f.y += f.vy * dt;
+      }
     }
 
     // Cleanup and misses
@@ -151,14 +163,22 @@
     for (const f of GAME.fruits) {
       if (!f.sliced && !f.missed && f.y - f.r > h) {
         f.missed = true;
-        GAME.lives -= 1;
-        drawLives();
-        if (GAME.lives <= 0) {
-          endGame();
+        // Only fruits (not bombs) cost a life when missed
+        if (!f.isBomb) {
+          GAME.lives -= 1;
+          drawLives();
+          if (GAME.lives <= 0) {
+            endGame();
+          }
         }
       }
     }
-    GAME.fruits = GAME.fruits.filter(f => !(f.sliced && f.y - f.r > h + 80));
+    // Remove sliced after short effect, and also remove far-offscreen items
+    GAME.fruits = GAME.fruits.filter(f => {
+      if (f.sliced && f.sliceTimer > 0.35) return false;
+      if (f.y - f.r > h + 160) return false;
+      return true;
+    });
   }
 
   function draw() {
@@ -167,29 +187,68 @@
     ctx.clearRect(0, 0, w, h);
 
     for (const f of GAME.fruits) {
-      const grad = ctx.createRadialGradient(f.x - f.r * 0.3, f.y - f.r * 0.3, f.r * 0.1, f.x, f.y, f.r);
-      grad.addColorStop(0, f.color.a);
-      grad.addColorStop(1, f.color.b);
-      ctx.fillStyle = grad;
-      ctx.beginPath();
-      ctx.arc(f.x, f.y, f.r, 0, Math.PI * 2);
-      ctx.fill();
+      const t = f.sliceTimer;
+      const disappear = f.sliced ? Math.min(1, t / 0.35) : 0;
+      const scale = f.sliced ? (1 + 0.15 * disappear) : 1;
+      const alpha = f.sliced ? (1 - disappear) : 1;
 
-      // glossy highlight
-      ctx.globalAlpha = 0.18;
-      ctx.fillStyle = '#fff';
-      ctx.beginPath();
-      ctx.ellipse(f.x - f.r * 0.3, f.y - f.r * 0.35, f.r * 0.45, f.r * 0.25, -0.8, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.globalAlpha = 1;
+      const radius = f.r * (1 - 0.35 * disappear) * scale;
+
+      if (f.isBomb) {
+        // Draw bomb
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, alpha);
+        const gradBomb = ctx.createRadialGradient(f.x - radius * 0.2, f.y - radius * 0.2, radius * 0.1, f.x, f.y, radius);
+        gradBomb.addColorStop(0, '#2f3140');
+        gradBomb.addColorStop(1, '#0c0e18');
+        ctx.fillStyle = gradBomb;
+        ctx.beginPath();
+        ctx.arc(f.x, f.y, radius, 0, Math.PI * 2);
+        ctx.fill();
+
+        // fuse
+        ctx.strokeStyle = '#cbd5e1';
+        ctx.lineWidth = Math.max(2, radius * 0.12);
+        ctx.beginPath();
+        ctx.moveTo(f.x + radius * 0.2, f.y - radius * 0.6);
+        ctx.quadraticCurveTo(f.x + radius * 0.5, f.y - radius * 1.0, f.x + radius * 0.8, f.y - radius * 0.8);
+        ctx.stroke();
+        // spark
+        ctx.fillStyle = '#fbbf24';
+        ctx.beginPath();
+        ctx.arc(f.x + radius * 0.85, f.y - radius * 0.82, radius * 0.12, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      } else {
+        // Draw fruit
+        const grad = ctx.createRadialGradient(f.x - radius * 0.3, f.y - radius * 0.3, radius * 0.1, f.x, f.y, radius);
+        grad.addColorStop(0, f.color.a);
+        grad.addColorStop(1, f.color.b);
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(f.x, f.y, radius, 0, Math.PI * 2);
+        ctx.fill();
+
+        // glossy highlight
+        ctx.save();
+        ctx.globalAlpha = 0.18 * Math.max(0, alpha);
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.ellipse(f.x - radius * 0.3, f.y - radius * 0.35, radius * 0.45, radius * 0.25, -0.8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
 
       if (f.sliced) {
-        // simple slice effect: ring + falling
-        ctx.strokeStyle = 'rgba(255,255,255,.6)';
+        // simple slice effect: ring and faint burst
+        ctx.save();
+        ctx.globalAlpha = 0.6 * Math.max(0, alpha);
+        ctx.strokeStyle = f.isBomb ? 'rgba(251,113,133,.8)' : 'rgba(255,255,255,.8)';
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.arc(f.x, f.y, f.r * 0.65, 0, Math.PI * 2);
+        ctx.arc(f.x, f.y, radius * 0.9, 0, Math.PI * 2);
         ctx.stroke();
+        ctx.restore();
       }
     }
   }
@@ -226,11 +285,24 @@
     }
     if (best) {
       best.sliced = true;
-      best.vy = rng(120, 240); // bounce little upwards then fall
-      best.vx *= 0.5;
-      GAME.score += Math.max(5, best.reward);
-      scoreEl.textContent = String(GAME.score);
-      updatePrizes();
+      best.sliceTimer = 0;
+      best.vy = rng(60, 140);
+      best.vx *= 0.4;
+      if (best.isBomb) {
+        // bomb penalty: -2 lives
+        GAME.lives -= 2;
+        if (GAME.lives < 0) GAME.lives = 0;
+        drawLives();
+        if (GAME.lives <= 0) {
+          endGame();
+          return;
+        }
+      } else {
+        // fruit reward: +5 points
+        GAME.score += 5;
+        scoreEl.textContent = String(GAME.score);
+        updatePrizes();
+      }
     }
   }
 
