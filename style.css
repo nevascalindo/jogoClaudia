@@ -56,10 +56,14 @@ body {
 .score { padding: 8px 12px; background: #111433; border-radius: 12px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.06); }
 .lives { display: flex; gap: 6px; align-items: center; }
 .life {
-  width: 18px; height: 18px; border-radius: 50%;
-  background: radial-gradient(circle at 30% 30%, #ff9fb1, #ff3b61 70%);
+  width: 20px; height: 20px; position: relative;
+}
+.life::before, .life::after {
+  content: ""; position: absolute; width: 12px; height: 18px; background: #ff3b61;
+  left: 4px; top: 3px; border-radius: 12px 12px 0 0; transform: rotate(-45deg);
   box-shadow: 0 2px 8px rgba(251,113,133,.45);
 }
+.life::after { left: auto; right: 4px; transform: rotate(45deg); }
 
 .prizes {
   grid-area: prizes;

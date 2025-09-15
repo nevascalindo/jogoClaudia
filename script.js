@@ -79,7 +79,7 @@
   function resetGame() {
     GAME.running = false;
     GAME.score = 0;
-    GAME.lives = 3;
+    GAME.lives = 3; // ensure full lives on restart
     GAME.time = 0;
     GAME.lastSpawn = 0;
     GAME.spawnIntervalMs = 900;
@@ -136,6 +136,7 @@
       isBomb,
       sliced: false,
       sliceTimer: 0,
+      entered: false,
       createdAt: now,
       reward: 5, // pontos fixos por bolinha
       missed: false,
@@ -167,13 +168,17 @@
         f.vy += g * dt;
         f.x += f.vx * dt;
         f.y += f.vy * dt;
+        // mark as entered when the fruit actually appears on screen
+        if (!f.entered && f.y + f.r < (canvas.height / DEVICE_PIXEL_RATIO)) {
+          f.entered = true;
+        }
       }
     }
 
     // Cleanup and misses
     const h = canvas.height / DEVICE_PIXEL_RATIO;
     for (const f of GAME.fruits) {
-      if (!f.sliced && !f.missed && f.y - f.r > h) {
+      if (!f.sliced && !f.missed && f.entered && f.y - f.r > h) {
         f.missed = true;
         // Only fruits (not bombs) cost a life when missed
         if (!f.isBomb) {
