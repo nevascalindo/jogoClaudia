@@ -27,6 +27,18 @@
     misses: 0,
   };
 
+  function changeLives(delta) {
+    if (!GAME.running && delta < 0) return;
+    const prev = GAME.lives;
+    GAME.lives = Math.max(0, Math.min(3, GAME.lives + delta));
+    if (GAME.lives !== prev) {
+      drawLives();
+      if (GAME.lives <= 0) {
+        endGame();
+      }
+    }
+  }
+
   const PRIZES = [
     { threshold: 100, element: null, name: 'Bolinha' },
     { threshold: 150, element: null, name: 'Copo' },
@@ -165,11 +177,7 @@
         f.missed = true;
         // Only fruits (not bombs) cost a life when missed
         if (!f.isBomb) {
-          GAME.lives -= 1;
-          drawLives();
-          if (GAME.lives <= 0) {
-            endGame();
-          }
+          changeLives(-1);
         }
       }
     }
@@ -290,13 +298,8 @@
       best.vx *= 0.4;
       if (best.isBomb) {
         // bomb penalty: -2 lives
-        GAME.lives -= 2;
-        if (GAME.lives < 0) GAME.lives = 0;
-        drawLives();
-        if (GAME.lives <= 0) {
-          endGame();
-          return;
-        }
+        changeLives(-2);
+        if (GAME.lives <= 0) return;
       } else {
         // fruit reward: +5 points
         GAME.score += 5;
