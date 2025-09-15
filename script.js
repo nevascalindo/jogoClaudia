@@ -46,6 +46,14 @@
     { threshold: 500, element: null, name: 'Porta celular' },
   ];
 
+  // Swipe trail
+  const TRAIL = {
+    maxAgeMs: 320,
+    minDistance: 2.5,
+    baseWidth: 12,
+    points: [], // {x, y, t}
+  };
+
   function setupPrizes() {
     const items = prizeList.querySelectorAll('li');
     items.forEach((li, idx) => {
@@ -93,6 +101,7 @@
       }
     });
     drawLives();
+    clearTrail();
   }
 
   function startGame() {
@@ -264,6 +273,8 @@
         ctx.restore();
       }
     }
+
+    drawTrail();
   }
 
   function loop(now) {
@@ -314,6 +325,75 @@
     }
   }
 
+  // --- Trail utilities ---
+  function addTrailPoint(x, y) {
+    const now = performance.now();
+    const last = TRAIL.points[TRAIL.points.length - 1];
+    if (last) {
+      const dx = x - last.x; const dy = y - last.y;
+      if (dx * dx + dy * dy < TRAIL.minDistance * TRAIL.minDistance) return;
+    }
+    TRAIL.points.push({ x, y, t: now });
+    const cutoff = now - TRAIL.maxAgeMs;
+    while (TRAIL.points.length && TRAIL.points[0].t < cutoff) TRAIL.points.shift();
+  }
+
+  function clearTrail() { TRAIL.points.length = 0; }
+
+  function drawTrail() {
+    const pts = TRAIL.points;
+    if (pts.length < 2) return;
+    const now = performance.now();
+    const cutoff = now - TRAIL.maxAgeMs;
+    while (pts.length && pts[0].t < cutoff) pts.shift();
+    if (pts.length < 2) return;
+
+    // Outer glow
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.lineCap = 'round';
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1];
+      const b = pts[i];
+      const age = (now - b.t) / TRAIL.maxAgeMs; // 0..1
+      const alpha = Math.max(0, 1 - age);
+      const speed = Math.hypot(b.x - a.x, b.y - a.y);
+      const width = Math.max(4, TRAIL.baseWidth + (speed * 0.2));
+
+      ctx.strokeStyle = `rgba(124,92,255,${0.12 * alpha})`;
+      ctx.lineWidth = width * 1.8;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+
+      ctx.strokeStyle = `rgba(34,211,238,${0.16 * alpha})`;
+      ctx.lineWidth = width * 1.2;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+    }
+
+    // Core line
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1];
+      const b = pts[i];
+      const age = (now - b.t) / TRAIL.maxAgeMs;
+      const alpha = Math.max(0, 1 - age);
+      const speed = Math.hypot(b.x - a.x, b.y - a.y);
+      const width = Math.max(2, TRAIL.baseWidth * 0.55 + (speed * 0.1));
+
+      ctx.strokeStyle = `rgba(255,255,255,${0.85 * alpha})`;
+      ctx.lineWidth = width;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   function updatePrizes() {
     for (const p of PRIZES) {
       if (GAME.score >= p.threshold && p.element && !p.element.classList.contains('prize-won')) {
@@ -351,13 +431,13 @@
   }
 
   let isPointerDown = false;
-  canvas.addEventListener('touchstart', (e) => { isPointerDown = true; const p = getCanvasPoint(e); handleSlice(p.x, p.y); e.preventDefault(); }, { passive: false });
-  canvas.addEventListener('touchmove', (e) => { if (!isPointerDown) return; const p = getCanvasPoint(e); handleSlice(p.x, p.y); e.preventDefault(); }, { passive: false });
-  canvas.addEventListener('touchend', () => { isPointerDown = false; });
+  canvas.addEventListener('touchstart', (e) => { isPointerDown = true; const p = getCanvasPoint(e); addTrailPoint(p.x, p.y); handleSlice(p.x, p.y); e.preventDefault(); }, { passive: false });
+  canvas.addEventListener('touchmove', (e) => { if (!isPointerDown) return; const p = getCanvasPoint(e); addTrailPoint(p.x, p.y); handleSlice(p.x, p.y); e.preventDefault(); }, { passive: false });
+  canvas.addEventListener('touchend', () => { isPointerDown = false; clearTrail(); });
 
-  canvas.addEventListener('mousedown', (e) => { isPointerDown = true; const p = getCanvasPoint(e); handleSlice(p.x, p.y); });
-  canvas.addEventListener('mousemove', (e) => { if (!isPointerDown) return; const p = getCanvasPoint(e); handleSlice(p.x, p.y); });
-  canvas.addEventListener('mouseup', () => { isPointerDown = false; });
+  canvas.addEventListener('mousedown', (e) => { isPointerDown = true; const p = getCanvasPoint(e); addTrailPoint(p.x, p.y); handleSlice(p.x, p.y); });
+  canvas.addEventListener('mousemove', (e) => { if (!isPointerDown) return; const p = getCanvasPoint(e); addTrailPoint(p.x, p.y); handleSlice(p.x, p.y); });
+  canvas.addEventListener('mouseup', () => { isPointerDown = false; clearTrail(); });
 
   // Buttons
   startBtn.addEventListener('click', startGame);
