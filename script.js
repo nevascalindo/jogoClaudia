@@ -1,121 +1,292 @@
-const emojis = ['📚', '📒', '✏️', '📏', '🎒'];
-const bomb = '💣';
+// Fruit Tap (Senac) - touch-friendly Fruit Ninja-style game
+// High-level: spawn fruits with physics arcs, tap to slice, lose life if miss
 
-let score = 0;
-let lives = 3;
-let gameRunning = true;
-let spawnInterval;
+(function () {
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+  const scoreEl = document.getElementById('score');
+  const livesEl = document.getElementById('lives');
+  const startOverlay = document.getElementById('startOverlay');
+  const gameOverOverlay = document.getElementById('gameOverOverlay');
+  const startBtn = document.getElementById('startBtn');
+  const restartBtn = document.getElementById('restartBtn');
+  const finalScoreEl = document.getElementById('finalScore');
+  const prizeList = document.getElementById('prizeList');
 
-const gameArea = document.getElementById('game-area');
-const scoreEl = document.getElementById('score');
-const livesEl = document.getElementById('lives');
-const gameOverEl = document.getElementById('game-over');
-const finalScoreEl = document.getElementById('final-score');
-const restartBtn = document.getElementById('restart-btn');
+  const DEVICE_PIXEL_RATIO = Math.min(2, window.devicePixelRatio || 1);
 
-function updateHUD() {
-  scoreEl.textContent = `Pontos: ${score}`;
+  const GAME = {
+    running: false,
+    score: 0,
+    lives: 3,
+    time: 0,
+    lastSpawn: 0,
+    spawnIntervalMs: 900,
+    gravity: 1200, // px/s^2 in logical pixels
+    fruits: [],
+    misses: 0,
+  };
 
-  livesEl.innerHTML = '';
-  for (let i = 0; i < 3; i++) {
-    const heart = document.createElement('span');
-    heart.textContent = '❤️';
-    if (i >= lives) heart.classList.add('lost');
-    livesEl.appendChild(heart);
+  const PRIZES = [
+    { threshold: 100, element: null, name: 'Bolinha' },
+    { threshold: 150, element: null, name: 'Copo' },
+    { threshold: 300, element: null, name: 'Régua' },
+    { threshold: 500, element: null, name: 'Porta celular' },
+  ];
+
+  function setupPrizes() {
+    const items = prizeList.querySelectorAll('li');
+    items.forEach((li, idx) => {
+      PRIZES[idx].element = li;
+    });
   }
-}
 
-function showFloatingText(text, x, y, type) {
-  const float = document.createElement('div');
-  float.className = `floating-text ${type}`;
-  float.textContent = text;
-  float.style.left = `${x}px`;
-  float.style.top = `${y}px`;
-  gameArea.appendChild(float);
-  setTimeout(() => float.remove(), 1000);
-}
+  function resizeCanvas() {
+    const rect = canvas.parentElement.getBoundingClientRect();
+    const width = Math.floor(rect.width);
+    const height = Math.floor(rect.height);
+    canvas.style.width = width + 'px';
+    canvas.style.height = height + 'px';
+    canvas.width = Math.floor(width * DEVICE_PIXEL_RATIO);
+    canvas.height = Math.floor(height * DEVICE_PIXEL_RATIO);
+    ctx.setTransform(DEVICE_PIXEL_RATIO, 0, 0, DEVICE_PIXEL_RATIO, 0, 0);
+  }
 
-function createEmoji() {
-  if (!gameRunning) return;
+  window.addEventListener('resize', resizeCanvas);
+  window.addEventListener('orientationchange', () => setTimeout(resizeCanvas, 100));
 
-  const el = document.createElement('div');
-  const isBomb = Math.random() < 0.2;
-  el.textContent = isBomb ? bomb : emojis[Math.floor(Math.random() * emojis.length)];
-  el.className = 'emoji';
+  function drawLives() {
+    livesEl.innerHTML = '';
+    for (let i = 0; i < GAME.lives; i++) {
+      const dot = document.createElement('span');
+      dot.className = 'life';
+      livesEl.appendChild(dot);
+    }
+  }
 
-  const size = 70;
-  const x = Math.random() * (window.innerWidth - size);
-  el.style.left = `${x}px`;
-  el.style.bottom = '-80px';
-  gameArea.appendChild(el);
-
-  let peak = 200 + Math.random() * 200;
-  let duration = 2200 + Math.random() * 800;
-
-  let start = null;
-  function animateEmoji(timestamp) {
-    if (!start) start = timestamp;
-    let elapsed = timestamp - start;
-
-    let progress = elapsed / duration;
-    if (progress > 1) progress = 1;
-
-    let y = -4 * peak * (progress - 0.5) ** 2 + peak;
-    el.style.bottom = `${y}px`;
-
-    if (progress < 1) {
-      requestAnimationFrame(animateEmoji);
-    } else {
-      if (!el.clicked && !isBomb) {
-        lives--;
-        updateHUD();
-        showFloatingText('-1', x, window.innerHeight - 100, 'minus');
-        if (lives <= 0) endGame();
+  function resetGame() {
+    GAME.running = false;
+    GAME.score = 0;
+    GAME.lives = 3;
+    GAME.time = 0;
+    GAME.lastSpawn = 0;
+    GAME.spawnIntervalMs = 900;
+    GAME.fruits = [];
+    scoreEl.textContent = '0';
+    PRIZES.forEach(p => {
+      if (p.element) {
+        p.element.classList.remove('prize-won');
+        const state = p.element.querySelector('.state');
+        if (state) state.textContent = '⏳';
       }
-      el.remove();
+    });
+    drawLives();
+  }
+
+  function startGame() {
+    resetGame();
+    startOverlay.classList.add('hidden');
+    gameOverOverlay.classList.add('hidden');
+    GAME.running = true;
+    GAME.time = performance.now();
+    requestAnimationFrame(loop);
+  }
+
+  function endGame() {
+    GAME.running = false;
+    finalScoreEl.textContent = String(GAME.score);
+    gameOverOverlay.classList.remove('hidden');
+  }
+
+  function rng(min, max) { return Math.random() * (max - min) + min; }
+
+  // Fruit entity
+  function spawnFruit(now) {
+    const w = canvas.width / DEVICE_PIXEL_RATIO;
+    const h = canvas.height / DEVICE_PIXEL_RATIO;
+    const side = Math.random() < 0.5 ? -1 : 1;
+    const x = side < 0 ? rng(w * 0.15, w * 0.45) : rng(w * 0.55, w * 0.85);
+    const baseY = h + 40; // below bottom
+    const radius = rng(24, 40);
+    const color = randomFruitColor();
+
+    const initialVy = -rng(700, 920);
+    const vx = side < 0 ? rng(140, 260) : -rng(140, 260);
+
+    GAME.fruits.push({
+      x, y: baseY,
+      vx, vy: initialVy,
+      r: radius,
+      color,
+      sliced: false,
+      createdAt: now,
+      reward: Math.round(radius / 4) * 5, // points per size
+      missed: false,
+    });
+  }
+
+  function randomFruitColor() {
+    const palette = [
+      ['#ff5a7a', '#ff2d55'], // watermelon
+      ['#fbbf24', '#f59e0b'], // mango
+      ['#34d399', '#10b981'], // lime
+      ['#22d3ee', '#06b6d4'], // blue fruit
+      ['#a78bfa', '#7c3aed'], // grape
+    ];
+    const [a, b] = palette[Math.floor(Math.random() * palette.length)];
+    return { a, b };
+  }
+
+  function update(dt) {
+    const g = GAME.gravity;
+    for (const f of GAME.fruits) {
+      if (f.sliced) continue;
+      f.vy += g * dt;
+      f.x += f.vx * dt;
+      f.y += f.vy * dt;
+    }
+
+    // Cleanup and misses
+    const h = canvas.height / DEVICE_PIXEL_RATIO;
+    for (const f of GAME.fruits) {
+      if (!f.sliced && !f.missed && f.y - f.r > h) {
+        f.missed = true;
+        GAME.lives -= 1;
+        drawLives();
+        if (GAME.lives <= 0) {
+          endGame();
+        }
+      }
+    }
+    GAME.fruits = GAME.fruits.filter(f => !(f.sliced && f.y - f.r > h + 80));
+  }
+
+  function draw() {
+    const w = canvas.width / DEVICE_PIXEL_RATIO;
+    const h = canvas.height / DEVICE_PIXEL_RATIO;
+    ctx.clearRect(0, 0, w, h);
+
+    for (const f of GAME.fruits) {
+      const grad = ctx.createRadialGradient(f.x - f.r * 0.3, f.y - f.r * 0.3, f.r * 0.1, f.x, f.y, f.r);
+      grad.addColorStop(0, f.color.a);
+      grad.addColorStop(1, f.color.b);
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(f.x, f.y, f.r, 0, Math.PI * 2);
+      ctx.fill();
+
+      // glossy highlight
+      ctx.globalAlpha = 0.18;
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.ellipse(f.x - f.r * 0.3, f.y - f.r * 0.35, f.r * 0.45, f.r * 0.25, -0.8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+
+      if (f.sliced) {
+        // simple slice effect: ring + falling
+        ctx.strokeStyle = 'rgba(255,255,255,.6)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(f.x, f.y, f.r * 0.65, 0, Math.PI * 2);
+        ctx.stroke();
+      }
     }
   }
 
-  el.addEventListener('click', () => {
-    if (el.clicked || !gameRunning) return;
-    el.clicked = true;
-    el.classList.add('clicked');
-    if (isBomb) {
-      lives--;
-      showFloatingText('-1', x, window.innerHeight - 100, 'minus');
-    } else {
-      score++;
-      showFloatingText('+1', x, window.innerHeight - 100, 'plus');
+  function loop(now) {
+    if (!GAME.running) return;
+    const dt = Math.min(0.035, (now - GAME.time) / 1000);
+    GAME.time = now;
+
+    // spawn logic with mild difficulty scaling
+    if (now - GAME.lastSpawn > GAME.spawnIntervalMs) {
+      spawnFruit(now);
+      if (Math.random() < 0.35) spawnFruit(now); // occasional double
+      GAME.lastSpawn = now;
+      GAME.spawnIntervalMs = Math.max(420, 900 - Math.floor(GAME.score / 50) * 40);
     }
-    updateHUD();
-    if (lives <= 0) endGame();
-    setTimeout(() => el.remove(), 300);
-  });
 
-  requestAnimationFrame(animateEmoji);
-}
+    update(dt);
+    draw();
+    requestAnimationFrame(loop);
+  }
 
-function startGame() {
-  score = 0;
-  lives = 3;
-  gameRunning = true;
-  updateHUD();
-  gameOverEl.style.display = 'none';
+  function distance(ax, ay, bx, by) {
+    const dx = ax - bx; const dy = ay - by; return Math.hypot(dx, dy);
+  }
 
-  if (spawnInterval) clearInterval(spawnInterval); // ✅ corrigido
-  spawnInterval = setInterval(() => {
-    if (gameRunning) createEmoji();
-  }, 900);
-}
+  function handleSlice(x, y) {
+    // Reward closest overlapping fruit first
+    let best = null; let bestDist = Infinity;
+    for (const f of GAME.fruits) {
+      if (f.sliced) continue;
+      const d = distance(x, y, f.x, f.y);
+      if (d <= f.r && d < bestDist) { best = f; bestDist = d; }
+    }
+    if (best) {
+      best.sliced = true;
+      best.vy = rng(120, 240); // bounce little upwards then fall
+      best.vx *= 0.5;
+      GAME.score += Math.max(5, best.reward);
+      scoreEl.textContent = String(GAME.score);
+      updatePrizes();
+    }
+  }
 
-function endGame() {
-  gameRunning = false;
-  gameOverEl.style.display = 'block';
-  finalScoreEl.textContent = `Você fez ${score} ponto${score === 1 ? '' : 's'}!`;
-}
+  function updatePrizes() {
+    for (const p of PRIZES) {
+      if (GAME.score >= p.threshold && p.element && !p.element.classList.contains('prize-won')) {
+        p.element.classList.add('prize-won');
+        const state = p.element.querySelector('.state');
+        if (state) state.textContent = '✅';
+        // brief toast effect
+        flashBadge(p.element);
+      }
+    }
+  }
 
-restartBtn.onclick = () => {
-  startGame();
-};
+  function flashBadge(li) {
+    li.animate([
+      { transform: 'scale(1)', boxShadow: '0 0 0 0 rgba(52,211,153,0)' },
+      { transform: 'scale(1.05)', boxShadow: '0 0 0 12px rgba(52,211,153,.15)' },
+      { transform: 'scale(1)', boxShadow: '0 0 0 0 rgba(52,211,153,0)' },
+    ], { duration: 700, easing: 'ease-out' });
+  }
 
-startGame();
+  // Input handling: touch and mouse
+  function getCanvasPoint(evt) {
+    const rect = canvas.getBoundingClientRect();
+    let clientX, clientY;
+    if (evt.touches && evt.touches.length) {
+      clientX = evt.touches[0].clientX; clientY = evt.touches[0].clientY;
+    } else if (evt.changedTouches && evt.changedTouches.length) {
+      clientX = evt.changedTouches[0].clientX; clientY = evt.changedTouches[0].clientY;
+    } else {
+      clientX = evt.clientX; clientY = evt.clientY;
+    }
+    const x = (clientX - rect.left);
+    const y = (clientY - rect.top);
+    return { x, y };
+  }
+
+  let isPointerDown = false;
+  canvas.addEventListener('touchstart', (e) => { isPointerDown = true; const p = getCanvasPoint(e); handleSlice(p.x, p.y); e.preventDefault(); }, { passive: false });
+  canvas.addEventListener('touchmove', (e) => { if (!isPointerDown) return; const p = getCanvasPoint(e); handleSlice(p.x, p.y); e.preventDefault(); }, { passive: false });
+  canvas.addEventListener('touchend', () => { isPointerDown = false; });
+
+  canvas.addEventListener('mousedown', (e) => { isPointerDown = true; const p = getCanvasPoint(e); handleSlice(p.x, p.y); });
+  canvas.addEventListener('mousemove', (e) => { if (!isPointerDown) return; const p = getCanvasPoint(e); handleSlice(p.x, p.y); });
+  canvas.addEventListener('mouseup', () => { isPointerDown = false; });
+
+  // Buttons
+  startBtn.addEventListener('click', startGame);
+  restartBtn.addEventListener('click', startGame);
+
+  // Initial setup
+  setupPrizes();
+  resizeCanvas();
+  resetGame();
+})();
+
+

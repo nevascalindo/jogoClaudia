@@ -1,22 +1,59 @@
 <!DOCTYPE html>
-<html lang="pt-br">
+<html lang="pt-BR">
 <head>
-  <meta charset="UTF-8" />
-  <title>Fruit Emoji Ninja 🍉</title>
-  <link href="https://fonts.googleapis.com/css2?family=Poppins&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css" />
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Fruit Tap - Senac</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div id="hud">
-    <div id="score">Pontos: 0</div>
-    <div id="lives">❤️❤️❤️</div>
-  </div>
-  <div id="game-area"></div>
-  <div id="game-over" style="display:none;">
-    <div>Game Over!<br /><br /></div>
-    <div id="final-score" style="font-size: 1.5rem; margin-bottom: 15px;"></div>
-    <button id="restart-btn">Recomeçar</button>
-  </div>
-  <script src="script.js"></script>
+    <div class="app">
+        <header class="hud">
+            <div class="brand">
+                <span class="logo">🍉</span>
+                <h1>Fruit Tap</h1>
+            </div>
+            <div class="stats">
+                <div class="score">Pontuação: <span id="score">0</span></div>
+                <div class="lives" id="lives" aria-label="Vidas"></div>
+            </div>
+        </header>
+
+        <aside class="prizes">
+            <h2>Prêmios</h2>
+            <ul id="prizeList">
+                <li data-threshold="100"><span class="badge">100p</span><span class="label">Bolinha</span><span class="state" aria-hidden="true">⏳</span></li>
+                <li data-threshold="150"><span class="badge">150p</span><span class="label">Copo</span><span class="state" aria-hidden="true">⏳</span></li>
+                <li data-threshold="300"><span class="badge">300p</span><span class="label">Régua</span><span class="state" aria-hidden="true">⏳</span></li>
+                <li data-threshold="500"><span class="badge">500p</span><span class="label">Porta celular</span><span class="state" aria-hidden="true">⏳</span></li>
+            </ul>
+        </aside>
+
+        <main class="stage">
+            <canvas id="gameCanvas" role="img" aria-label="Jogo Fruit Tap"></canvas>
+
+            <div class="overlay" id="startOverlay">
+                <div class="card">
+                    <h2>Toque para jogar</h2>
+                    <p>Estoure as frutas para marcar pontos. Não deixe elas caírem!</p>
+                    <button id="startBtn" class="btn">Começar</button>
+                </div>
+            </div>
+
+            <div class="overlay hidden" id="gameOverOverlay">
+                <div class="card">
+                    <h2>Fim de jogo</h2>
+                    <p>Sua pontuação: <strong id="finalScore">0</strong></p>
+                    <button id="restartBtn" class="btn">Jogar novamente</button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="script.js" defer></script>
 </body>
 </html>
+
